@@ -64,45 +64,148 @@ const Index = () => {
   };
 
   const handleFrame = async (imageData: string) => {
-    // This will be connected to Lovable AI for real detection
-    // For now, simulate detection
-    const mockDetections = [
-      { object: 'person', distance: '2 meters ahead', confidence: 0.92 },
-      { object: 'chair', distance: '1 meter to the right', confidence: 0.85 },
-      { object: 'table', distance: '3 meters ahead', confidence: 0.78 },
-      { object: 'door', distance: '5 meters ahead', confidence: 0.88 },
-    ];
+    if (mode !== 'obstacle') return;
 
-    const randomDetection = mockDetections[Math.floor(Math.random() * mockDetections.length)];
-    const newDetection: Detection = {
-      id: Date.now().toString(),
-      ...randomDetection,
-      timestamp: Date.now(),
-    };
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-scene`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            image: imageData,
+            mode: 'obstacle',
+          }),
+        }
+      );
 
-    setDetections((prev) => [...prev, newDetection]);
-    
-    // Announce critical obstacles
-    if (randomDetection.confidence > 0.8) {
-      const announcement = `${randomDetection.object} detected, ${randomDetection.distance}`;
-      ttsRef.current?.speak(announcement, 'high');
+      if (!response.ok) {
+        if (response.status === 429) {
+          toast({
+            title: 'Rate Limit',
+            description: 'Too many requests. Slowing down detection.',
+            variant: 'destructive',
+          });
+          return;
+        }
+        throw new Error('Failed to analyze frame');
+      }
+
+      const data = await response.json();
+      
+      if (data.detections && data.detections.length > 0) {
+        data.detections.forEach((detection: any) => {
+          const newDetection: Detection = {
+            id: Date.now().toString() + Math.random(),
+            object: detection.object,
+            distance: detection.distance,
+            confidence: detection.confidence,
+            timestamp: Date.now(),
+          };
+
+          setDetections((prev) => [...prev, newDetection]);
+
+          // Announce high priority obstacles
+          if (detection.priority === 'high' && detection.confidence > 0.7) {
+            const announcement = `${detection.object} detected, ${detection.distance}`;
+            ttsRef.current?.speak(announcement, 'high');
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error analyzing frame:', error);
     }
   };
 
-  const handleDescribeScene = () => {
+  const handleDescribeScene = async () => {
     setMode('scene');
     ttsRef.current?.speak('Analyzing your surroundings. Please wait.', 'high');
-    setTimeout(() => {
-      ttsRef.current?.speak(
-        'You are in a room. There is a person two meters ahead. A chair is one meter to your right. A door is visible five meters ahead.',
-        'high'
+    
+    // Capture current frame
+    const video = document.querySelector('video');
+    const canvas = document.createElement('canvas');
+    if (!video) return;
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    
+    context.drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-scene`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            image: imageData,
+            mode: 'scene',
+          }),
+        }
       );
-    }, 2000);
+
+      const data = await response.json();
+      if (data.text) {
+        ttsRef.current?.speak(data.text, 'high');
+      }
+    } catch (error) {
+      console.error('Error describing scene:', error);
+      ttsRef.current?.speak('Unable to describe scene at this time.', 'high');
+    }
   };
 
-  const handleReadText = () => {
+  const handleReadText = async () => {
     setMode('text');
-    ttsRef.current?.speak('Text reading mode activated. Point camera at text.', 'high');
+    ttsRef.current?.speak('Reading text. Please wait.', 'high');
+    
+    // Capture current frame
+    const video = document.querySelector('video');
+    const canvas = document.createElement('canvas');
+    if (!video) return;
+    
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    
+    context.drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-scene`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            image: imageData,
+            mode: 'text',
+          }),
+        }
+      );
+
+      const data = await response.json();
+      if (data.text) {
+        ttsRef.current?.speak(data.text, 'high');
+      }
+    } catch (error) {
+      console.error('Error reading text:', error);
+      ttsRef.current?.speak('Unable to read text at this time.', 'high');
+    }
+    
+    setMode('obstacle');
   };
 
   return (

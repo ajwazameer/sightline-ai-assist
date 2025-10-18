@@ -1,0 +1,4 @@
+project_id = "zfaotbqcirfwudhrgrqd"
+
+[functions.analyze-scene]
+verify_jwt = false
