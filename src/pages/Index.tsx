@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Scan, FileText } from 'lucide-react';
+import { Play, Square, Scan, FileText, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CameraView } from '@/components/CameraView';
 import { DetectionFeed } from '@/components/DetectionFeed';
@@ -24,6 +24,7 @@ const Index = () => {
   const [mode, setMode] = useState<'obstacle' | 'scene' | 'text'>('obstacle');
   const [aiMessage, setAiMessage] = useState<{ label: string; text: string } | null>(null);
   const ttsRef = useRef<TextToSpeech | null>(null);
+  const [isDetectingObstacle, setIsDetectingObstacle] = useState(false);
   // Tracks which obstacles were already announced so we only speak about
   // a given object once while it stays in view, instead of every capture cycle.
   const announcedObjectsRef = useRef<Set<string>>(new Set());
@@ -140,7 +141,88 @@ const Index = () => {
       console.error('Error analyzing frame:', error);
     }
   };
+// Grabs a single still frame from the live <video> element as a base64 JPEG.
+const captureFrame = (): string | null => {
+  const video = document.querySelector('video');
+  if (!video) return null;
 
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+
+  context.drawImage(video, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.8);
+};
+
+// One-shot obstacle check. Doesn't touch the shared `mode` state used by the
+// continuous scanning loop, so it can't interrupt or be interrupted by
+// Describe Scene / Read Text.
+const handleDetectObstacleOnce = async () => {
+  if (isDetectingObstacle) return;
+  setIsDetectingObstacle(true);
+  setAiMessage(null);
+  ttsRef.current?.speak('Checking for obstacles.', 'high');
+
+  const imageData = captureFrame();
+  if (!imageData) {
+    setIsDetectingObstacle(false);
+    return;
+  }
+
+  try {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-scene`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ image: imageData, mode: 'obstacle' }),
+      }
+    );
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        toast({
+          title: 'Rate Limit',
+          description: 'Too many requests. Please wait a moment and try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.detections && data.detections.length > 0) {
+      const newDetections: Detection[] = data.detections.map((d: any) => ({
+        id: Date.now().toString() + Math.random(),
+        object: d.object,
+        distance: d.distance,
+        confidence: d.confidence,
+        timestamp: Date.now(),
+      }));
+      setDetections((prev) => [...prev, ...newDetections]);
+
+      const summary = data.detections.map((d: any) => `${d.object}, ${d.distance}`).join('. ');
+      ttsRef.current?.speak(summary, 'high');
+      setAiMessage({ label: 'Obstacle Check', text: summary });
+    } else {
+      ttsRef.current?.speak('No obstacles detected right now.', 'high');
+      setAiMessage({ label: 'Obstacle Check', text: 'No obstacles detected right now.' });
+    }
+  } catch (error) {
+    console.error('Error detecting obstacle:', error);
+    ttsRef.current?.speak('Unable to check for obstacles right now.', 'high');
+    setAiMessage({ label: 'Obstacle Check', text: 'Unable to check for obstacles right now.' });
+  } finally {
+    setIsDetectingObstacle(false);
+  }
+};
   const handleDescribeScene = async () => {
     setMode('scene');
     setAiMessage(null);
@@ -290,7 +372,16 @@ const Index = () => {
                     Stop Scanning
                   </Button>
                 )}
-
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={handleDetectObstacleOnce}
+                  className="w-full h-14 sm:h-20 text-base sm:text-lg font-semibold"
+                  disabled={!isScanning || isDetectingObstacle}
+                >
+                  <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
+                  {isDetectingObstacle ? 'Detecting...' : 'Detect Obstacle'}
+                </Button>
                 <Button
                   size="lg"
                   variant="outline"
@@ -306,7 +397,7 @@ const Index = () => {
                   size="lg"
                   variant="outline"
                   onClick={handleReadText}
-                  className="w-full h-14 sm:h-20 text-base sm:text-lg font-semibold sm:col-span-2"
+                  className="w-full h-14 sm:h-20 text-base sm:text-lg font-semibold"
                   disabled={!isScanning}
                 >
                   <FileText className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
