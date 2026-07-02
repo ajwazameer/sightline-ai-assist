@@ -15,6 +15,14 @@ export const CameraView = ({ onFrame, isActive }: CameraViewProps) => {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const { toast } = useToast();
 
+  // Keep a ref to the latest onFrame so the interval below never runs
+  // against a stale closure (which previously caused obstacle detection
+  // to keep firing even after switching to "Describe Scene" or "Read Text").
+  const onFrameRef = useRef(onFrame);
+  useEffect(() => {
+    onFrameRef.current = onFrame;
+  }, [onFrame]);
+
   useEffect(() => {
     if (isActive && !stream) {
       startCamera();
@@ -28,7 +36,7 @@ export const CameraView = ({ onFrame, isActive }: CameraViewProps) => {
 
     const interval = setInterval(() => {
       captureFrame();
-    }, 2000); // Capture frame every 2 seconds
+    }, 5000); // Capture frame every 5 seconds (keeps us under free-tier rate limits)
 
     return () => clearInterval(interval);
   }, [isActive, stream]);
@@ -79,7 +87,7 @@ export const CameraView = ({ onFrame, isActive }: CameraViewProps) => {
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     const imageData = canvas.toDataURL('image/jpeg', 0.8);
-    onFrame(imageData);
+    onFrameRef.current(imageData);
   };
 
   return (

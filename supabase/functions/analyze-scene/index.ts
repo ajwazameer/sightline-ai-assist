@@ -14,14 +14,14 @@ serve(async (req) => {
 
   try {
     const { image, mode } = await req.json();
-    
+
     if (!image) {
       throw new Error('No image data provided');
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY');
+    if (!GROQ_API_KEY) {
+      throw new Error('GROQ_API_KEY is not configured');
     }
 
     console.log('Analyzing image with mode:', mode);
@@ -64,15 +64,15 @@ If no text is visible, say "No text detected in the image."`;
       userPrompt = 'Read all text visible in this image.';
     }
 
-    // Call Lovable AI Gateway with vision model
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Call Groq's vision model (OpenAI-compatible chat completions endpoint)
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
         messages: [
           {
             role: 'system',
@@ -101,23 +101,23 @@ If no text is visible, say "No text detected in the image."`;
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Lovable AI error:', response.status, errorText);
-      
+      console.error('Groq API error:', response.status, errorText);
+
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: 'Rate limit exceeded. Please wait a moment.' }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      
-      if (response.status === 402) {
+
+      if (response.status === 401 || response.status === 403) {
         return new Response(
-          JSON.stringify({ error: 'AI credits depleted. Please add credits to continue.' }),
+          JSON.stringify({ error: 'Groq API key issue. Check that GROQ_API_KEY is set and valid.' }),
           { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      
-      throw new Error(`AI Gateway error: ${response.status}`);
+
+      throw new Error(`Groq API error: ${response.status}`);
     }
 
     const data = await response.json();

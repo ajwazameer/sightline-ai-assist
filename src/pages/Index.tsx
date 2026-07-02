@@ -22,7 +22,11 @@ const Index = () => {
   const [volume, setVolume] = useState(80);
   const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [mode, setMode] = useState<'obstacle' | 'scene' | 'text'>('obstacle');
+  const [aiMessage, setAiMessage] = useState<{ label: string; text: string } | null>(null);
   const ttsRef = useRef<TextToSpeech | null>(null);
+  // Tracks which obstacles were already announced so we only speak about
+  // a given object once while it stays in view, instead of every capture cycle.
+  const announcedObjectsRef = useRef<Set<string>>(new Set());
   const { toast } = useToast();
 
   useEffect(() => {
@@ -95,8 +99,10 @@ const Index = () => {
       }
 
       const data = await response.json();
-      
+
       if (data.detections && data.detections.length > 0) {
+        const currentlySeen = new Set<string>();
+
         data.detections.forEach((detection: any) => {
           const newDetection: Detection = {
             id: Date.now().toString() + Math.random(),
@@ -108,12 +114,27 @@ const Index = () => {
 
           setDetections((prev) => [...prev, newDetection]);
 
-          // Announce high priority obstacles
-          if (detection.priority === 'high' && detection.confidence > 0.7) {
+          const objectKey = String(detection.object).toLowerCase().trim();
+          currentlySeen.add(objectKey);
+
+          // Only announce high priority obstacles the first time they appear;
+          // skip if we already announced this same object last cycle.
+          const alreadyAnnounced = announcedObjectsRef.current.has(objectKey);
+          if (
+            detection.priority === 'high' &&
+            detection.confidence > 0.7 &&
+            !alreadyAnnounced
+          ) {
             const announcement = `${detection.object} detected, ${detection.distance}`;
             ttsRef.current?.speak(announcement, 'high');
           }
         });
+
+        // Objects no longer seen are removed so they'll be re-announced
+        // if they come back into view later.
+        announcedObjectsRef.current = currentlySeen;
+      } else {
+        announcedObjectsRef.current = new Set();
       }
     } catch (error) {
       console.error('Error analyzing frame:', error);
@@ -122,6 +143,7 @@ const Index = () => {
 
   const handleDescribeScene = async () => {
     setMode('scene');
+    setAiMessage(null);
     ttsRef.current?.speak('Analyzing your surroundings. Please wait.', 'high');
     
     // Capture current frame
@@ -156,16 +178,21 @@ const Index = () => {
       const data = await response.json();
       if (data.text) {
         ttsRef.current?.speak(data.text, 'high');
+        setAiMessage({ label: 'Scene Description', text: data.text });
       }
     } catch (error) {
       console.error('Error describing scene:', error);
       ttsRef.current?.speak('Unable to describe scene at this time.', 'high');
+      setAiMessage({ label: 'Scene Description', text: 'Unable to describe scene at this time.' });
     }
+
+    setMode('obstacle');
   };
 
   const handleReadText = async () => {
     setMode('text');
     ttsRef.current?.speak('Reading text. Please wait.', 'high');
+    setAiMessage(null);
     
     // Capture current frame
     const video = document.querySelector('video');
@@ -199,10 +226,12 @@ const Index = () => {
       const data = await response.json();
       if (data.text) {
         ttsRef.current?.speak(data.text, 'high');
+        setAiMessage({ label: 'Text Read (OCR)', text: data.text });
       }
     } catch (error) {
       console.error('Error reading text:', error);
       ttsRef.current?.speak('Unable to read text at this time.', 'high');
+      setAiMessage({ label: 'Text Read (OCR)', text: 'Unable to read text at this time.' });
     }
     
     setMode('obstacle');
@@ -212,17 +241,17 @@ const Index = () => {
     <div className="min-h-screen bg-gradient-to-br from-background via-muted/30 to-background">
       {/* Header */}
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
+        <div className="container mx-auto px-3 sm:px-4 py-3 sm:py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg">
-                <Scan className="w-6 h-6 text-primary-foreground" />
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shrink-0">
+                <Scan className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+                <h1 className="text-lg sm:text-2xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
                   Sightline AI
                 </h1>
-                <p className="text-xs text-muted-foreground">Intelligent Vision Assistant</p>
+                <p className="text-[11px] sm:text-xs text-muted-foreground">Intelligent Vision Assistant</p>
               </div>
             </div>
           </div>
@@ -230,24 +259,24 @@ const Index = () => {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
-        <div className="grid lg:grid-cols-3 gap-6">
+      <main className="container mx-auto px-3 sm:px-4 py-4 sm:py-8">
+        <div className="grid lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Camera View - Large */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="bg-card border border-border rounded-2xl p-6 shadow-xl">
-              <div className="aspect-video mb-6">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6 order-1">
+            <div className="bg-card border border-border rounded-2xl p-3 sm:p-6 shadow-xl">
+              <div className="aspect-video mb-4 sm:mb-6">
                 <CameraView onFrame={handleFrame} isActive={isScanning} />
               </div>
 
               {/* Control Buttons */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 {!isScanning ? (
                   <Button
                     size="lg"
                     onClick={handleStartScanning}
-                    className="w-full h-20 text-lg font-semibold bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all shadow-lg"
+                    className="w-full h-14 sm:h-20 text-base sm:text-lg font-semibold bg-gradient-to-r from-primary to-secondary hover:opacity-90 transition-all shadow-lg"
                   >
-                    <Play className="w-6 h-6 mr-2" />
+                    <Play className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
                     Start Scanning
                   </Button>
                 ) : (
@@ -255,9 +284,9 @@ const Index = () => {
                     size="lg"
                     variant="destructive"
                     onClick={handleStopScanning}
-                    className="w-full h-20 text-lg font-semibold shadow-lg"
+                    className="w-full h-14 sm:h-20 text-base sm:text-lg font-semibold shadow-lg"
                   >
-                    <Square className="w-6 h-6 mr-2" />
+                    <Square className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
                     Stop Scanning
                   </Button>
                 )}
@@ -266,10 +295,10 @@ const Index = () => {
                   size="lg"
                   variant="outline"
                   onClick={handleDescribeScene}
-                  className="w-full h-20 text-lg font-semibold"
+                  className="w-full h-14 sm:h-20 text-base sm:text-lg font-semibold"
                   disabled={!isScanning}
                 >
-                  <Scan className="w-6 h-6 mr-2" />
+                  <Scan className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
                   Describe Scene
                 </Button>
 
@@ -277,18 +306,27 @@ const Index = () => {
                   size="lg"
                   variant="outline"
                   onClick={handleReadText}
-                  className="w-full h-20 text-lg font-semibold col-span-2"
+                  className="w-full h-14 sm:h-20 text-base sm:text-lg font-semibold sm:col-span-2"
                   disabled={!isScanning}
                 >
-                  <FileText className="w-6 h-6 mr-2" />
+                  <FileText className="w-5 h-5 sm:w-6 sm:h-6 mr-2" />
                   Read Text (OCR)
                 </Button>
               </div>
             </div>
+
+            {aiMessage && (
+              <div className="bg-card border border-border rounded-2xl p-4 sm:p-6 shadow-xl">
+                <p className="text-xs font-medium uppercase tracking-wide text-primary mb-2">
+                  {aiMessage.label}
+                </p>
+                <p className="text-foreground leading-relaxed">{aiMessage.text}</p>
+              </div>
+            )}
           </div>
 
           {/* Sidebar */}
-          <div className="space-y-6">
+          <div className="space-y-4 sm:space-y-6 order-2">
             {/* Audio Controls */}
             <AudioControls
               isMuted={isMuted}
@@ -300,15 +338,15 @@ const Index = () => {
             />
 
             {/* Detection Feed */}
-            <div className="bg-card border border-border rounded-2xl p-6 shadow-xl">
+            <div className="bg-card border border-border rounded-2xl p-4 sm:p-6 shadow-xl">
               <DetectionFeed detections={detections} />
             </div>
           </div>
         </div>
 
         {/* Features Info */}
-        <div className="mt-12 grid md:grid-cols-3 gap-6">
-          <div className="bg-card border border-border rounded-2xl p-6 text-center hover:shadow-lg transition-all">
+        <div className="mt-8 sm:mt-12 grid sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-6 text-center hover:shadow-lg transition-all">
             <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
               <Scan className="w-6 h-6 text-primary" />
             </div>
@@ -318,7 +356,7 @@ const Index = () => {
             </p>
           </div>
 
-          <div className="bg-card border border-border rounded-2xl p-6 text-center hover:shadow-lg transition-all">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-6 text-center hover:shadow-lg transition-all">
             <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center mx-auto mb-4">
               <FileText className="w-6 h-6 text-secondary" />
             </div>
@@ -328,7 +366,7 @@ const Index = () => {
             </p>
           </div>
 
-          <div className="bg-card border border-border rounded-2xl p-6 text-center hover:shadow-lg transition-all">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-6 text-center hover:shadow-lg transition-all">
             <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
               <Scan className="w-6 h-6 text-accent" />
             </div>
