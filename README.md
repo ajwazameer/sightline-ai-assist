@@ -8,10 +8,14 @@ Built as a semester AI project.
 
 ---
 
+## Live Demo
+
+## \*\*https://sightline-ai-assist.vercel.app/
+
 ## Features
 
 - **Real-time Obstacle Detection** — Continuously scans the live camera feed and calls out nearby obstacles (object, approximate distance, position). Each object is announced once while it stays in view, not repeatedly.
-- **Scene Description** — On demand, captures the current frame and generates a spoken *and* on-screen description of the environment (indoor/outdoor, key objects, hazards, navigation suggestions).
+- **Scene Description** — On demand, captures the current frame and generates a spoken _and_ on-screen description of the environment (indoor/outdoor, key objects, hazards, navigation suggestions).
 - **Text Reading (OCR)** — Reads aloud (and displays on screen) any visible text in frame — signs, labels, documents, street names.
 - **Voice Feedback (Text-to-Speech)** — All detections and descriptions are spoken using the browser's built-in speech synthesis, with adjustable volume and mute controls.
 - **Priority-based Alerts** — High-priority, close-range obstacles are announced immediately without needing to wait.
@@ -90,7 +94,7 @@ Get a free Groq key at [console.groq.com](https://console.groq.com) (no card req
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_PUBLISHABLE_KEY`
    - `VITE_SUPABASE_PROJECT_ID`
-   (same values as your local `.env`)
+     (same values as your local `.env`)
 5. Click **Deploy**.
 
 Your Supabase project (and the `analyze-scene` function + `GROQ_API_KEY` secret) stays hosted on Supabase — Vercel only serves the frontend. No further backend setup needed once Supabase is already configured as above.
