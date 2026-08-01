@@ -10,7 +10,7 @@ Built as a semester AI project.
 
 ## Live Demo
 
-## \*\*https://sightline-ai-assist.vercel.app/
+## https://sightline-ai-assist.vercel.app/
 
 ## Features
 
